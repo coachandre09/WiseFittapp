@@ -1,66 +1,49 @@
-from rest_framework.test import APITestCase
-from rest_framework.authtoken.models import Token
 from django.contrib.auth.models import User
-from rest_framework import status
-from .models import TrainingProgram, TrainingDay, TrainingBlock, TrainingExerciseBlock
+from django.utils import timezone
+from rest_framework.test import APITestCase
 
-class TrainingProgramTests(APITestCase):
+from gymapp.models import Profile, Program, WorkoutTemplate, Session, Booking, FunctionalWOD, Lead
+
+
+class BookingWorkoutLinkTests(APITestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username='coach', password='pass1234')
-        self.program = TrainingProgram.objects.create(name='Beginner Program', coach=self.user)
-        self.day = TrainingDay.objects.create(program=self.program, day_number=1)
-        self.block = TrainingBlock.objects.create(day=self.day, title='Strength Block', block_type='strength')
-        self.exercise = TrainingExerciseBlock.objects.create(
-            block=self.block,
-            name='Squat',
-            sets=3,
-            reps=10,
-            tempo='20X1',
-            rest='60s',
-            notes='Full depth'
-        )
+        self.coach = User.objects.create_user("coach", password="pass1234")
+        Profile.objects.create(user=self.coach, role="coach")
+        self.member = User.objects.create_user("member", password="pass1234")
+        Profile.objects.create(user=self.member, role="member")
+        self.program = Program.objects.create(name="SGPT Strength")
+        WorkoutTemplate.objects.create(program=self.program, title="Day A", content={"exercise": "Deadlift"})
+        now = timezone.now()
+        self.sgpt = Session.objects.create(session_type="sgpt", room="sgpt_room", title="SGPT", coach=self.coach, start_time=now, end_time=now + timezone.timedelta(hours=1), capacity=5)
 
-    def test_program_str(self):
-        self.assertEqual(str(self.program), 'Beginner Program')
+    def test_booking_generates_workout_instance(self):
+        self.client.force_authenticate(user=self.member)
+        response = self.client.post("/api/bookings/", {"member": self.member.id, "session": self.sgpt.id, "status": "booked"})
+        self.assertEqual(response.status_code, 201)
+        booking = Booking.objects.get(id=response.data["id"])
+        self.assertTrue(hasattr(booking, "workout_instance"))
 
-    def test_day_str(self):
-        self.assertEqual(str(self.day), 'Beginner Program - Day 1')
 
-    def test_block_str(self):
-        self.assertEqual(str(self.block), 'STRENGTH - Strength Block')
-
-    def test_exercise_str(self):
-        self.assertEqual(str(self.exercise), 'Squat')
-
-    def test_api_get_programs(self):
-        response = self.client.get('/programs/')
-        self.assertEqual(response.status_code, 200)
-
-    def test_api_get_days(self):
-        response = self.client.get('/days/')
-        self.assertEqual(response.status_code, 200)
-
-    def test_api_get_blocks(self):
-        response = self.client.get('/blocks/')
-        self.assertEqual(response.status_code, 200)
-
-    def test_api_get_exercises(self):
-        response = self.client.get('/exercises/')
-        self.assertEqual(response.status_code, 200)
-
-class AuthPermissionTests(APITestCase):
+class ScreenTests(APITestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username='coach', password='pass1234')
-        self.token = Token.objects.create(user=self.user)
-        self.client.credentials(HTTP_AUTHORIZATION='Token ' + self.token.key)
+        coach = User.objects.create_user("coach2", password="pass1234")
+        Profile.objects.create(user=coach, role="coach")
+        member = User.objects.create_user("member2", password="pass1234")
+        Profile.objects.create(user=member, role="member")
+        now = timezone.now()
+        self.fn_session = Session.objects.create(session_type="functional", room="functional_room", title="Fn", coach=coach, start_time=now - timezone.timedelta(minutes=5), end_time=now + timezone.timedelta(minutes=55), capacity=12)
+        FunctionalWOD.objects.create(session=self.fn_session, workout={"wod": "AMRAP 15"})
+        Booking.objects.create(member=member, session=self.fn_session, status="booked")
 
-    def test_create_program_authenticated(self):
-        data = {'name': 'Test Program', 'coach': self.user.id}
-        response = self.client.post('/programs/', data)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+    def test_functional_screen(self):
+        response = self.client.get("/api/screens/functional/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("wod", response.data)
 
-    def test_create_program_unauthenticated(self):
-        self.client.force_authenticate(user=None)
-        data = {'name': 'Test Program', 'coach': self.user.id}
-        response = self.client.post('/programs/', data)
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+class LeadWebhookTests(APITestCase):
+    def test_deduplicates_by_email(self):
+        Lead.objects.create(full_name="A", email="a@mail.com")
+        response = self.client.post("/api/integrations/leads/webhook/", {"email": "a@mail.com", "name": "New"}, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Lead.objects.filter(email="a@mail.com").count(), 1)
