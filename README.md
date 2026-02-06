@@ -2,91 +2,88 @@
 
 ## Assumptions
 - Single-location deployment for MVP; service lines are tracked per entry.
-- PostgreSQL is the production target; SQLite is used for local quickstart.
+- SQLite default for local dev; PostgreSQL optional via env vars.
 - JWT auth is implemented with access/refresh tokens.
 - SGPT workout snapshots are generated from `WorkoutTemplate` at booking time.
 - Functional classes use a session-level `FunctionalWOD`.
 
-## Step 1 — Data model rationale
-Core entities and links:
-- **Auth/RBAC**: `User` + `Profile(role)` supports Admin, Coach, Reception, Member, Practitioner.
+## Data model rationale (high level)
+- **RBAC**: `User + Profile(role)` for Admin, Coach, Reception, Member, Practitioner.
 - **Members/Memberships**: `MemberProfile`, `MembershipPackage`, `ProductAddon`, `PackageAddon`, `Membership`.
-- **Scheduling/Bookings**: `Session` with capacities (SGPT=5, Functional=12), `Booking` with waitlist/check-in states.
-- **Workout Linkage**:
-  - SGPT: `Booking -> WorkoutInstance(snapshot)` (member-specific snapshot).
+- **Scheduling/Bookings**: `Session` (capacity/room/type), `Booking` (booked/waitlist/check-in).
+- **Booking -> Workout -> Screen linkage**:
+  - SGPT: `Booking -> WorkoutInstance(snapshot)`.
   - Functional: `Session -> FunctionalWOD`.
-- **Logging**: `WorkoutLog` linked to `Booking`.
-- **Treatments**: `TreatmentType`, `TreatmentBooking` with consent checkbox and notes.
-- **Finance**: `FinanceEntry` + `OverheadConfig` (allocation method).
-- **CRM**: `Lead`, `LeadActivity`, `LeadTask` stages from New Lead to Churned.
-- **Integrations/Attribution**: `LeadIntegrationEvent` stores raw payload + mapped fields + UTM/click IDs in `Lead`.
-- **Offline conversions**: `ConversionEvent`, `OfflineConversionConnector`, `ConnectorRun` with pluggable provider interface.
+- **Logging**: `WorkoutLog` linked to booking.
+- **Treatments**: `TreatmentType`, `TreatmentBooking` with consent + notes.
+- **Finance**: `FinanceEntry`, `OverheadConfig`.
+- **CRM**: `Lead`, `LeadActivity`, `LeadTask`, `ConversionEvent`.
+- **Integrations**: `LeadIntegrationEvent`, `OfflineConversionConnector`, `ConnectorRun`.
 
-## Step 1 — API endpoints
-Base path: `/api/`
+## API endpoints (base: `/api/`)
 - Auth: `POST /auth/token/`, `POST /auth/token/refresh/`
-- CRUD viewsets:
-  - `/profiles/`, `/membership-packages/`, `/product-addons/`, `/package-addons/`, `/memberships/`
-  - `/programs/`, `/workout-templates/`, `/sessions/`, `/bookings/`, `/workout-instances/`, `/workout-logs/`
-  - `/functional-wods/`, `/treatment-types/`, `/treatment-bookings/`
-  - `/finance-entries/` (+ `GET /finance-entries/dashboard/`)
-  - `/leads/`, `/lead-activities/`, `/lead-tasks/`, `/conversion-events/`
-  - `/overhead-configs/`, `/offline-connectors/` (+ `POST /offline-connectors/{id}/run/`), `/connector-runs/`
-- TV screens:
+- Core CRUD: profiles, memberships/packages/addons, programs/templates, sessions/bookings/workouts/logs,
+  treatments, finance, CRM, connectors.
+- Screens:
   - `GET /screens/sgpt/`
   - `GET /screens/functional/`
-- Integrations/automations:
-  - `POST /integrations/leads/webhook/` (generic ingest + dedupe)
+- Integrations:
+  - `POST /integrations/leads/webhook/`
   - `POST /crm/leads/{lead_id}/consultation-booked/`
 - OpenAPI: `GET /openapi/`
 
-## Step 1 — Frontend routes/pages
-`frontend/app`:
+## Frontend routes
 - `/` dashboard
-- `/tv/sgpt` SGPT room screen
-- `/tv/functional` Functional room screen
+- `/tv/sgpt`
+- `/tv/functional`
 - `/members`, `/bookings`, `/treatments`, `/finance`, `/crm`, `/login`
 
-## Step 2 — Backend implementation summary
-- Django + DRF with JWT authentication and RBAC-ready profile roles.
-- Booking flow auto-creates SGPT `WorkoutInstance` snapshot and enforces waitlist on capacity.
-- Functional screen reads session `FunctionalWOD` for active class.
-- CRM lead webhook ingestion stores raw payload, attribution fields, dedupes by email/phone.
-- Finance dashboard returns income/expense/margin/service-line/ARPU/churn.
-- Offline conversion connectors implemented as provider interfaces with stub adapters.
+---
 
-## Step 3 — Frontend implementation summary
-- Next.js + TypeScript + Tailwind-ready structure.
-- Mobile-first dark UI shell and module pages.
-- TV pages fetch and render live SGPT/Functional screen payloads.
+## ✅ Pronto para teste (rápido)
 
-## Step 4 — Seed, tests, and setup
-### Seed command
-- Creates: 2 coaches, 2 practitioners, 20 members, 50 leads, 1-week SGPT/Functional sessions, sample SGPT template + WODs, sample finance entries, memberships, treatment booking.
-
+### Opção 1: Local (SQLite)
 ```bash
-python manage.py seed_data
+make setup
+make seed
+make test
+make run
 ```
 
-### Local setup
+### Opção 2: Backend manual
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python manage.py makemigrations gymapp
 python manage.py migrate
 python manage.py seed_data
+python manage.py test -v 2
 python manage.py runserver
 ```
 
-Frontend:
+### Opção 3: PostgreSQL (com Docker)
+```bash
+docker compose up -d db
+export DB_ENGINE=postgres
+export POSTGRES_DB=wisefitt
+export POSTGRES_USER=wisefitt
+export POSTGRES_PASSWORD=wisefitt
+export POSTGRES_HOST=localhost
+export POSTGRES_PORT=5432
+
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py runserver
+```
+
+### Frontend
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-### Deployment notes
-- Configure PostgreSQL and set `DATABASES` accordingly.
-- Set secure `SECRET_KEY`, `DEBUG=False`, trusted `ALLOWED_HOSTS`.
-- Add CORS/cookie strategy if frontend served separately.
-- For offline conversions, replace stub providers in `gymapp/integrations.py`.
+## Deployment notes
+- Set secure `SECRET_KEY`, `DEBUG=False`, and proper `ALLOWED_HOSTS`.
+- Add CORS policy if frontend is hosted separately.
+- Replace stub adapters in `gymapp/integrations.py` for real ad platform exports.

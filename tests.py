@@ -1,3 +1,4 @@
+from datetime import timedelta
 from django.contrib.auth.models import User
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -14,7 +15,7 @@ class BookingWorkoutLinkTests(APITestCase):
         self.program = Program.objects.create(name="SGPT Strength")
         WorkoutTemplate.objects.create(program=self.program, title="Day A", content={"exercise": "Deadlift"})
         now = timezone.now()
-        self.sgpt = Session.objects.create(session_type="sgpt", room="sgpt_room", title="SGPT", coach=self.coach, start_time=now, end_time=now + timezone.timedelta(hours=1), capacity=5)
+        self.sgpt = Session.objects.create(session_type="sgpt", room="sgpt_room", title="SGPT", coach=self.coach, start_time=now, end_time=now + timedelta(hours=1), capacity=5)
 
     def test_booking_generates_workout_instance(self):
         self.client.force_authenticate(user=self.member)
@@ -31,7 +32,7 @@ class ScreenTests(APITestCase):
         member = User.objects.create_user("member2", password="pass1234")
         Profile.objects.create(user=member, role="member")
         now = timezone.now()
-        self.fn_session = Session.objects.create(session_type="functional", room="functional_room", title="Fn", coach=coach, start_time=now - timezone.timedelta(minutes=5), end_time=now + timezone.timedelta(minutes=55), capacity=12)
+        self.fn_session = Session.objects.create(session_type="functional", room="functional_room", title="Fn", coach=coach, start_time=now - timedelta(minutes=5), end_time=now + timedelta(minutes=55), capacity=12)
         FunctionalWOD.objects.create(session=self.fn_session, workout={"wod": "AMRAP 15"})
         Booking.objects.create(member=member, session=self.fn_session, status="booked")
 
