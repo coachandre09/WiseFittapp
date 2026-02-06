@@ -1,1 +1,2 @@
-export default function Page(){return <div className='bg-slate-800 p-6 rounded-xl text-xl'>Crm Module</div>}
+import { redirect } from 'next/navigation'
+export default function Page(){ redirect('/prospects') }

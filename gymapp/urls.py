@@ -32,4 +32,6 @@ urlpatterns = [
     path("screens/functional/", views.functional_screen),
     path("integrations/leads/webhook/", views.lead_webhook),
     path("crm/leads/<int:lead_id>/consultation-booked/", views.consultation_booked),
+    path("metrics/conversion/", views.conversion_metrics),
+    path("members-overview/", views.members_overview),
 ]

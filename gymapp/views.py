@@ -1,8 +1,8 @@
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth.models import User
-from django.db.models import Sum, Count
+from django.db.models import Sum, Count, Q
 from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, action, permission_classes
@@ -21,7 +21,7 @@ from .serializers import (
     ProgramSerializer, WorkoutTemplateSerializer, SessionSerializer, FunctionalWODSerializer, BookingSerializer,
     WorkoutInstanceSerializer, WorkoutLogSerializer, TreatmentTypeSerializer, TreatmentBookingSerializer,
     FinanceEntrySerializer, LeadSerializer, LeadActivitySerializer, LeadTaskSerializer,
-    LeadIntegrationEventSerializer, ConversionEventSerializer, OverheadConfigSerializer,
+    ConversionEventSerializer, OverheadConfigSerializer,
     OfflineConversionConnectorSerializer, ConnectorRunSerializer
 )
 
@@ -136,17 +136,75 @@ class FinanceEntryViewSet(DefaultViewSet):
 
 
 class LeadViewSet(DefaultViewSet):
-    queryset = Lead.objects.all()
     serializer_class = LeadSerializer
+
+    def get_queryset(self):
+        qs = Lead.objects.all().order_by("-created_at")
+        q = self.request.query_params.get("q")
+        if q:
+            qs = qs.filter(Q(full_name__icontains=q) | Q(email__icontains=q) | Q(phone__icontains=q))
+        stages = self.request.query_params.get("stages")
+        if stages:
+            qs = qs.filter(stage__in=[s.strip() for s in stages.split(",") if s.strip()])
+        sources = self.request.query_params.get("sources")
+        if sources:
+            qs = qs.filter(source__in=[s.strip() for s in sources.split(",") if s.strip()])
+        start_date = self.request.query_params.get("start_date")
+        end_date = self.request.query_params.get("end_date")
+        if start_date:
+            qs = qs.filter(created_at__date__gte=start_date)
+        if end_date:
+            qs = qs.filter(created_at__date__lte=end_date)
+        return qs
+
+    @action(detail=True, methods=["post"])
+    def convert(self, request, pk=None):
+        lead = self.get_object()
+        if lead.converted_member_id:
+            return Response(self.get_serializer(lead).data)
+
+        email = lead.email or f"lead_{lead.id}@wisefitt.local"
+        username = email.split("@")[0]
+        base = username
+        idx = 1
+        while User.objects.filter(username=username).exists():
+            idx += 1
+            username = f"{base}{idx}"
+
+        user = User.objects.create(username=username, email=lead.email)
+        user.first_name = (lead.full_name.split(" ") or [""])[0]
+        if " " in lead.full_name:
+            user.last_name = " ".join(lead.full_name.split(" ")[1:])
+        user.set_unusable_password()
+        user.save()
+
+        Profile.objects.get_or_create(user=user, defaults={"role": Profile.Role.MEMBER, "phone": lead.phone})
+        MemberProfile.objects.get_or_create(user=user)
+
+        lead.stage = Lead.Stage.CONVERTED
+        lead.converted_member = user
+        lead.won_at = timezone.now()
+        lead.save(update_fields=["stage", "converted_member", "won_at"])
+
+        ConversionEvent.objects.create(event_type="Membership Purchased", lead=lead, metadata={"converted_member_id": user.id})
+        return Response(self.get_serializer(lead).data)
+
+    @action(detail=True, methods=["post"])
+    def mark_lost(self, request, pk=None):
+        lead = self.get_object()
+        lead.stage = Lead.Stage.CHURNED
+        lead.lost_reason = request.data.get("lost_reason", "")
+        lead.save(update_fields=["stage", "lost_reason"])
+        return Response(self.get_serializer(lead).data)
 
 
 class LeadActivityViewSet(DefaultViewSet):
-    queryset = LeadActivity.objects.all()
+    queryset = LeadActivity.objects.all().order_by("-created_at")
     serializer_class = LeadActivitySerializer
 
 
 class LeadTaskViewSet(DefaultViewSet):
-    queryset = LeadTask.objects.all()
+    queryset = LeadTask.objects.all().order_by("due_date")
     serializer_class = LeadTaskSerializer
 
 
@@ -247,3 +305,59 @@ def consultation_booked(request, lead_id):
     lead.save(update_fields=["stage"])
     ConversionEvent.objects.create(event_type="Consultation Booked", lead=lead, metadata={"source": "automation"})
     return Response({"status": "ok"})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def conversion_metrics(request):
+    days = int(request.query_params.get("days", 30))
+    source = request.query_params.get("source")
+    start = timezone.now() - timedelta(days=days)
+
+    leads = Lead.objects.filter(created_at__gte=start)
+    if source:
+        leads = leads.filter(source__iexact=source)
+
+    total = leads.count()
+    converted = leads.filter(stage=Lead.Stage.CONVERTED).count()
+    new_7_days = leads.filter(created_at__gte=timezone.now() - timedelta(days=7)).count()
+
+    grouped = (
+        leads.extra(select={"day": "date(created_at)"})
+        .values("day")
+        .annotate(count=Count("id"))
+        .order_by("day")
+    )
+    by_source = list(leads.values("source").annotate(total=Count("id")).order_by("-total"))
+
+    return Response(
+        {
+            "total_prospects": total,
+            "converted": converted,
+            "conversion_rate": round((converted / total) * 100, 2) if total else 0,
+            "new_prospects_7d": new_7_days,
+            "timeseries": [{"date": str(r["day"]), "count": r["count"]} for r in grouped],
+            "by_source": by_source,
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def members_overview(request):
+    users = User.objects.filter(profile__role=Profile.Role.MEMBER).select_related("member_profile")
+    payload = []
+    for u in users:
+        active = Membership.objects.filter(member=u, is_active=True).select_related("package").order_by("-start_date").first()
+        payload.append(
+            {
+                "id": u.id,
+                "name": u.get_full_name() or u.username,
+                "email": u.email,
+                "phone": getattr(u.profile, "phone", ""),
+                "active_membership": bool(active),
+                "package": active.package.name if active else "-",
+                "start_date": str(active.start_date) if active else None,
+            }
+        )
+    return Response(payload)

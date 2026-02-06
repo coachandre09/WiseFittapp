@@ -1,6 +1,5 @@
 from django.conf import settings
 from django.db import models
-from django.utils import timezone
 
 
 class TimeStampedModel(models.Model):
@@ -187,6 +186,10 @@ class Lead(TimeStampedModel):
     click_id = models.CharField(max_length=180, blank=True)
     expected_value = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     probability = models.PositiveIntegerField(default=0)
+    won_at = models.DateTimeField(null=True, blank=True)
+    converted_member = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="converted_from_leads")
+    lost_reason = models.CharField(max_length=240, blank=True)
+    notes = models.TextField(blank=True)
 
 
 class LeadActivity(TimeStampedModel):

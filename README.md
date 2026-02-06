@@ -1,66 +1,15 @@
-# WiseFitt Premium Gym Platform (MVP)
+# WiseFitt Premium Gym Platform
 
-## Assumptions
-- Single-location deployment for MVP; service lines are tracked per entry.
-- SQLite default for local dev; PostgreSQL optional via env vars.
-- JWT auth is implemented with access/refresh tokens.
-- SGPT workout snapshots are generated from `WorkoutTemplate` at booking time.
-- Functional classes use a session-level `FunctionalWOD`.
-
-## Data model rationale (high level)
-- **RBAC**: `User + Profile(role)` for Admin, Coach, Reception, Member, Practitioner.
-- **Members/Memberships**: `MemberProfile`, `MembershipPackage`, `ProductAddon`, `PackageAddon`, `Membership`.
-- **Scheduling/Bookings**: `Session` (capacity/room/type), `Booking` (booked/waitlist/check-in).
-- **Booking -> Workout -> Screen linkage**:
-  - SGPT: `Booking -> WorkoutInstance(snapshot)`.
-  - Functional: `Session -> FunctionalWOD`.
-- **Logging**: `WorkoutLog` linked to booking.
-- **Treatments**: `TreatmentType`, `TreatmentBooking` with consent + notes.
-- **Finance**: `FinanceEntry`, `OverheadConfig`.
-- **CRM**: `Lead`, `LeadActivity`, `LeadTask`, `ConversionEvent`.
-- **Integrations**: `LeadIntegrationEvent`, `OfflineConversionConnector`, `ConnectorRun`.
-
-## API endpoints (base: `/api/`)
-- Auth: `POST /auth/token/`, `POST /auth/token/refresh/`
-- Core CRUD: profiles, memberships/packages/addons, programs/templates, sessions/bookings/workouts/logs,
-  treatments, finance, CRM, connectors.
-- Screens:
-  - `GET /screens/sgpt/`
-  - `GET /screens/functional/`
-- Integrations:
-  - `POST /integrations/leads/webhook/`
-  - `POST /crm/leads/{lead_id}/consultation-booked/`
-- OpenAPI: `GET /openapi/`
-
-## Frontend routes
-- `/` dashboard
-- `/tv/sgpt`
-- `/tv/functional`
-- `/members`, `/bookings`, `/treatments`, `/finance`, `/crm`, `/login`
-
----
-
-## ✅ Pronto para teste (rápido)
-
-### Opção 1: Local (SQLite)
-```bash
-make setup
-make seed
-make test
-make run
-```
-
-### Opção 2: Backend manual
+## Backend (Django)
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python manage.py migrate
 python manage.py seed_data
-python manage.py test -v 2
-python manage.py runserver
+python manage.py runserver 0.0.0.0:8000
 ```
 
-### Opção 3: PostgreSQL (com Docker)
+### Optional PostgreSQL
 ```bash
 docker compose up -d db
 export DB_ENGINE=postgres
@@ -69,21 +18,26 @@ export POSTGRES_USER=wisefitt
 export POSTGRES_PASSWORD=wisefitt
 export POSTGRES_HOST=localhost
 export POSTGRES_PORT=5432
-
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
 python manage.py migrate
-python manage.py runserver
 ```
 
-### Frontend
+## Frontend (Next.js)
 ```bash
 cd frontend
 npm install
-npm run dev
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api npm run dev -- --host 0.0.0.0 --port 3000
 ```
 
-## Deployment notes
-- Set secure `SECRET_KEY`, `DEBUG=False`, and proper `ALLOWED_HOSTS`.
-- Add CORS policy if frontend is hosted separately.
-- Replace stub adapters in `gymapp/integrations.py` for real ad platform exports.
+## CRM flow implemented
+- Login with JWT (`/api/auth/token/` + refresh).
+- Dashboard conversion metrics with filters by `days` and `source` via `/api/metrics/conversion/`.
+- Prospects list with search/filter/add/convert/mark lost.
+- Prospect detail with editable fields, activities, tasks, conversion CTA.
+- Members list via `/api/members-overview/`.
+
+## Important API endpoints
+- `POST /api/leads/{id}/convert/`
+- `POST /api/leads/{id}/mark_lost/`
+- `GET /api/metrics/conversion/?days=30&source=Meta`
+- `GET /api/members-overview/`
+- `GET /openapi/`
