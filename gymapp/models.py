@@ -235,3 +235,64 @@ class ConnectorRun(TimeStampedModel):
     connector = models.ForeignKey(OfflineConversionConnector, on_delete=models.CASCADE, related_name="runs")
     status = models.CharField(max_length=20, default="stubbed")
     response = models.JSONField(default=dict)
+
+
+class MobilityAssessment(TimeStampedModel):
+    member = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mobility_assessments")
+    assessed_on = models.DateField()
+    pain_flag = models.BooleanField(default=False)
+
+    ankle_left_score = models.PositiveSmallIntegerField(default=2)
+    ankle_right_score = models.PositiveSmallIntegerField(default=2)
+    ankle_left_dorsiflexion_cm = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    ankle_right_dorsiflexion_cm = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+
+    aslr_left_score = models.PositiveSmallIntegerField(default=2)
+    aslr_right_score = models.PositiveSmallIntegerField(default=2)
+
+    shoulder_left_score = models.PositiveSmallIntegerField(default=2)
+    shoulder_right_score = models.PositiveSmallIntegerField(default=2)
+
+    overhead_squat_score = models.PositiveSmallIntegerField(default=2)
+    wall_angels_score = models.PositiveSmallIntegerField(default=2)
+
+    ankle_final_score = models.PositiveSmallIntegerField(default=2)
+    aslr_final_score = models.PositiveSmallIntegerField(default=2)
+    shoulder_final_score = models.PositiveSmallIntegerField(default=2)
+
+    notes = models.TextField(blank=True)
+
+
+class MobilityExercise(TimeStampedModel):
+    class Category(models.TextChoices):
+        ANKLE = "ankle", "Ankle"
+        HIP = "hip", "Hip"
+        THORACIC = "thoracic", "Thoracic"
+        SHOULDER = "shoulder", "Shoulder"
+        STABILITY = "stability", "Stability"
+
+    class Level(models.TextChoices):
+        BEGINNER = "beginner", "Beginner"
+        INTERMEDIATE = "intermediate", "Intermediate"
+        ADVANCED = "advanced", "Advanced"
+
+    name = models.CharField(max_length=160)
+    category = models.CharField(max_length=20, choices=Category.choices)
+    level = models.CharField(max_length=20, choices=Level.choices, default=Level.BEGINNER)
+    description = models.TextField(blank=True)
+    media_url = models.URLField(blank=True)
+
+
+class MobilityPlan(TimeStampedModel):
+    member = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mobility_plans")
+    assessment = models.ForeignKey(MobilityAssessment, on_delete=models.CASCADE, related_name="plans")
+    is_active = models.BooleanField(default=True)
+
+
+class MobilityPlanItem(TimeStampedModel):
+    plan = models.ForeignKey(MobilityPlan, on_delete=models.CASCADE, related_name="items")
+    exercise = models.ForeignKey(MobilityExercise, on_delete=models.PROTECT)
+    sets = models.PositiveSmallIntegerField(default=2)
+    reps_or_time = models.CharField(max_length=80, default="30-60s")
+    frequency_per_week = models.PositiveSmallIntegerField(default=3)
+    notes = models.CharField(max_length=240, blank=True)

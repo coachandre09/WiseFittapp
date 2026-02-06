@@ -8,6 +8,7 @@ const nav = [
   ['/', 'Dashboard'],
   ['/prospects', 'Prospects'],
   ['/members', 'Members'],
+  ['/bookings', 'Training'],
   ['/tv/sgpt', 'SGPT TV'],
   ['/tv/functional', 'Functional TV'],
 ]

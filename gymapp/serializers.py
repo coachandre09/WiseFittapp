@@ -4,7 +4,8 @@ from .models import (
     Profile, MemberProfile, MembershipPackage, ProductAddon, PackageAddon, Membership,
     Program, WorkoutTemplate, Session, FunctionalWOD, Booking, WorkoutInstance, WorkoutLog,
     TreatmentType, TreatmentBooking, FinanceEntry, Lead, LeadActivity, LeadTask,
-    LeadIntegrationEvent, ConversionEvent, OverheadConfig, OfflineConversionConnector, ConnectorRun
+    LeadIntegrationEvent, ConversionEvent, OverheadConfig, OfflineConversionConnector, ConnectorRun,
+    MobilityAssessment, MobilityExercise, MobilityPlan, MobilityPlanItem
 )
 
 
@@ -135,3 +136,27 @@ class OfflineConversionConnectorSerializer(BaseSerializer):
 class ConnectorRunSerializer(BaseSerializer):
     class Meta(BaseSerializer.Meta):
         model = ConnectorRun
+
+
+class MobilityAssessmentSerializer(BaseSerializer):
+    class Meta(BaseSerializer.Meta):
+        model = MobilityAssessment
+
+
+class MobilityExerciseSerializer(BaseSerializer):
+    class Meta(BaseSerializer.Meta):
+        model = MobilityExercise
+
+
+class MobilityPlanItemSerializer(BaseSerializer):
+    exercise_name = serializers.CharField(source="exercise.name", read_only=True)
+
+    class Meta(BaseSerializer.Meta):
+        model = MobilityPlanItem
+
+
+class MobilityPlanSerializer(BaseSerializer):
+    items = MobilityPlanItemSerializer(many=True, read_only=True)
+
+    class Meta(BaseSerializer.Meta):
+        model = MobilityPlan

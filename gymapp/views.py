@@ -13,16 +13,18 @@ from .models import (
     Profile, MemberProfile, MembershipPackage, ProductAddon, PackageAddon, Membership,
     Program, WorkoutTemplate, Session, FunctionalWOD, Booking, WorkoutInstance, WorkoutLog,
     TreatmentType, TreatmentBooking, FinanceEntry, Lead, LeadActivity, LeadTask,
-    LeadIntegrationEvent, ConversionEvent, OverheadConfig, OfflineConversionConnector, ConnectorRun
+    LeadIntegrationEvent, ConversionEvent, OverheadConfig, OfflineConversionConnector, ConnectorRun,
+    MobilityAssessment, MobilityExercise, MobilityPlan, MobilityPlanItem
 )
-from .permissions import IsStaffRole
+from .permissions import IsStaffRole, IsAdmin
 from .serializers import (
     ProfileSerializer, MembershipPackageSerializer, ProductAddonSerializer, PackageAddonSerializer, MembershipSerializer,
     ProgramSerializer, WorkoutTemplateSerializer, SessionSerializer, FunctionalWODSerializer, BookingSerializer,
     WorkoutInstanceSerializer, WorkoutLogSerializer, TreatmentTypeSerializer, TreatmentBookingSerializer,
     FinanceEntrySerializer, LeadSerializer, LeadActivitySerializer, LeadTaskSerializer,
     ConversionEventSerializer, OverheadConfigSerializer,
-    OfflineConversionConnectorSerializer, ConnectorRunSerializer
+    OfflineConversionConnectorSerializer, ConnectorRunSerializer,
+    MobilityAssessmentSerializer, MobilityExerciseSerializer, MobilityPlanSerializer, MobilityPlanItemSerializer
 )
 
 
@@ -361,3 +363,132 @@ def members_overview(request):
             }
         )
     return Response(payload)
+
+
+WISEFITT_PRIORITY_ORDER = ["hip", "shoulder", "ankle", "thoracic"]
+
+
+def _library_pick(category, limit=2):
+    return list(MobilityExercise.objects.filter(category=category).order_by("level", "name")[:limit])
+
+
+def _build_mobility_plan_for_assessment(assessment: MobilityAssessment):
+    if assessment.pain_flag:
+        assessment.ankle_left_score = assessment.ankle_right_score = 1
+        assessment.aslr_left_score = assessment.aslr_right_score = 1
+        assessment.shoulder_left_score = assessment.shoulder_right_score = 1
+        assessment.overhead_squat_score = 1
+        assessment.wall_angels_score = 1
+
+    assessment.ankle_final_score = min(assessment.ankle_left_score, assessment.ankle_right_score)
+    assessment.aslr_final_score = min(assessment.aslr_left_score, assessment.aslr_right_score)
+    assessment.shoulder_final_score = min(assessment.shoulder_left_score, assessment.shoulder_right_score)
+    assessment.save(update_fields=[
+        "ankle_left_score", "ankle_right_score", "aslr_left_score", "aslr_right_score",
+        "shoulder_left_score", "shoulder_right_score", "overhead_squat_score", "wall_angels_score",
+        "ankle_final_score", "aslr_final_score", "shoulder_final_score",
+    ])
+
+    MobilityPlan.objects.filter(member=assessment.member, is_active=True).update(is_active=False)
+    plan = MobilityPlan.objects.create(member=assessment.member, assessment=assessment, is_active=True)
+
+    picks = []
+    if assessment.aslr_final_score <= 2:
+        picks += _library_pick("hip", 2)
+    if assessment.shoulder_final_score <= 2:
+        picks += _library_pick("shoulder", 2)
+    if assessment.ankle_final_score <= 2:
+        picks += _library_pick("ankle", 2)
+    if assessment.wall_angels_score <= 2:
+        picks += _library_pick("thoracic", 2)
+
+    # de-duplicate and cap 5 exercises
+    unique = []
+    seen = set()
+    for ex in picks:
+        if ex.id not in seen:
+            seen.add(ex.id)
+            unique.append(ex)
+        if len(unique) >= 5:
+            break
+
+    if not unique:
+        unique = _library_pick("stability", 2) or _library_pick("hip", 2)
+
+    for exercise in unique[:5]:
+        MobilityPlanItem.objects.create(
+            plan=plan, exercise=exercise, sets=2, reps_or_time="30-60s or 8-12 reps", frequency_per_week=3,
+            notes="Pain-free range only",
+        )
+    return plan
+
+
+class MobilityAssessmentViewSet(DefaultViewSet):
+    queryset = MobilityAssessment.objects.all().order_by("-assessed_on", "-created_at")
+    serializer_class = MobilityAssessmentSerializer
+
+    def perform_create(self, serializer):
+        obj = serializer.save()
+        obj.ankle_final_score = min(obj.ankle_left_score, obj.ankle_right_score)
+        obj.aslr_final_score = min(obj.aslr_left_score, obj.aslr_right_score)
+        obj.shoulder_final_score = min(obj.shoulder_left_score, obj.shoulder_right_score)
+        obj.save(update_fields=["ankle_final_score", "aslr_final_score", "shoulder_final_score"])
+
+    @action(detail=True, methods=["post"], url_path="generate-plan")
+    def generate_plan(self, request, pk=None):
+        assessment = self.get_object()
+        plan = _build_mobility_plan_for_assessment(assessment)
+        return Response(MobilityPlanSerializer(plan).data, status=status.HTTP_201_CREATED)
+
+
+class MobilityExerciseViewSet(DefaultViewSet):
+    queryset = MobilityExercise.objects.all().order_by("category", "name")
+    serializer_class = MobilityExerciseSerializer
+
+    def get_permissions(self):
+        if self.action in ["create", "update", "partial_update", "destroy"]:
+            return [IsAdmin()]
+        return [IsAuthenticated()]
+
+
+class MobilityPlanViewSet(DefaultViewSet):
+    queryset = MobilityPlan.objects.all().order_by("-created_at")
+    serializer_class = MobilityPlanSerializer
+
+
+class MobilityPlanItemViewSet(DefaultViewSet):
+    queryset = MobilityPlanItem.objects.all().order_by("id")
+    serializer_class = MobilityPlanItemSerializer
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def latest_mobility_for_member(request, member_id):
+    assessment = MobilityAssessment.objects.filter(member_id=member_id).order_by("-assessed_on", "-created_at").first()
+    if not assessment:
+        return Response({"assessment": None, "plan": None})
+    plan = MobilityPlan.objects.filter(member_id=member_id, is_active=True).order_by("-created_at").first()
+    return Response({
+        "assessment": MobilityAssessmentSerializer(assessment).data,
+        "plan": MobilityPlanSerializer(plan).data if plan else None,
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def mobility_block_for_member(request, member_id):
+    plan = MobilityPlan.objects.filter(member_id=member_id, is_active=True).order_by("-created_at").first()
+    if not plan:
+        return Response({"mobility_block": []})
+    items = list(plan.items.select_related("exercise")[:2])
+    payload = [
+        {
+            "exercise": i.exercise.name,
+            "category": i.exercise.category,
+            "sets": i.sets,
+            "reps_or_time": i.reps_or_time,
+            "frequency_per_week": i.frequency_per_week,
+        }
+        for i in items
+    ]
+    return Response({"mobility_block": payload})

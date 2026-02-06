@@ -25,6 +25,10 @@ router.register("conversion-events", views.ConversionEventViewSet)
 router.register("overhead-configs", views.OverheadConfigViewSet)
 router.register("offline-connectors", views.OfflineConversionConnectorViewSet)
 router.register("connector-runs", views.ConnectorRunViewSet)
+router.register("mobility/assessments", views.MobilityAssessmentViewSet, basename="mobility-assessments")
+router.register("mobility/exercises", views.MobilityExerciseViewSet, basename="mobility-exercises")
+router.register("mobility/plans", views.MobilityPlanViewSet, basename="mobility-plans")
+router.register("mobility/plan-items", views.MobilityPlanItemViewSet, basename="mobility-plan-items")
 
 urlpatterns = [
     path("", include(router.urls)),
@@ -34,4 +38,6 @@ urlpatterns = [
     path("crm/leads/<int:lead_id>/consultation-booked/", views.consultation_booked),
     path("metrics/conversion/", views.conversion_metrics),
     path("members-overview/", views.members_overview),
+    path("mobility/members/<int:member_id>/latest/", views.latest_mobility_for_member),
+    path("mobility/members/<int:member_id>/block/", views.mobility_block_for_member),
 ]

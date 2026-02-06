@@ -70,3 +70,41 @@ class LeadWorkflowTests(APITestCase):
         response = self.client.get("/api/metrics/conversion/?days=30&source=Meta")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["total_prospects"], 2)
+
+
+class MobilityTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user("adminmob", password="pass1234")
+        Profile.objects.create(user=self.admin, role="admin")
+        self.member = User.objects.create_user("membermob", password="pass1234")
+        Profile.objects.create(user=self.member, role="member")
+        self.client.force_authenticate(user=self.admin)
+
+    def test_generate_mobility_plan(self):
+        # seed minimal library
+        self.client.post("/api/mobility/exercises/", {"name": "90/90 Hip Flow", "category": "hip", "level": "beginner"})
+        self.client.post("/api/mobility/exercises/", {"name": "Wall Slide", "category": "shoulder", "level": "beginner"})
+        self.client.post("/api/mobility/exercises/", {"name": "Knee to Wall", "category": "ankle", "level": "beginner"})
+
+        assessment = self.client.post("/api/mobility/assessments/", {
+            "member": self.member.id,
+            "assessed_on": "2026-01-01",
+            "ankle_left_score": 1,
+            "ankle_right_score": 2,
+            "aslr_left_score": 2,
+            "aslr_right_score": 2,
+            "shoulder_left_score": 2,
+            "shoulder_right_score": 3,
+            "overhead_squat_score": 2,
+            "wall_angels_score": 2,
+        }, format="json")
+        self.assertEqual(assessment.status_code, 201)
+        aid = assessment.data["id"]
+
+        response = self.client.post(f"/api/mobility/assessments/{aid}/generate-plan/")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(len(response.data.get("items", [])) >= 1)
+
+        latest = self.client.get(f"/api/mobility/members/{self.member.id}/latest/")
+        self.assertEqual(latest.status_code, 200)
+        self.assertIsNotNone(latest.data["assessment"])

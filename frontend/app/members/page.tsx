@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { AppShell } from '../../components/AppShell'
 import { apiFetch } from '../../lib/api'
@@ -16,7 +17,7 @@ export default function MembersPage(){
     <div className='card overflow-hidden'>
       <table className='w-full text-sm'>
         <thead className='bg-white/5 text-left text-white/70'><tr><th className='p-3'>Name</th><th>Email</th><th>Phone</th><th>Active Membership</th><th>Package</th><th>Start</th></tr></thead>
-        <tbody>{filtered.map((m)=> <tr key={m.id} className='border-t border-white/5'><td className='p-3 text-[#f3deb5]'>{m.name}</td><td>{m.email || '-'}</td><td>{m.phone || '-'}</td><td>{m.active_membership ? 'Yes':'No'}</td><td>{m.package}</td><td>{m.start_date || '-'}</td></tr>)}</tbody>
+        <tbody>{filtered.map((m)=> <tr key={m.id} className='border-t border-white/5'><td className='p-3 text-[#f3deb5]'><Link className='hover:underline' href={`/members/${m.id}`}>{m.name}</Link></td><td>{m.email || '-'}</td><td>{m.phone || '-'}</td><td>{m.active_membership ? 'Yes':'No'}</td><td>{m.package}</td><td>{m.start_date || '-'}</td></tr>)}</tbody>
       </table>
       {!filtered.length && <div className='p-12 text-center text-white/50'>No members found.</div>}
     </div>

@@ -7,7 +7,7 @@ from django.utils import timezone
 from gymapp.models import (
     Profile, MemberProfile, MembershipPackage, Membership, Program, WorkoutTemplate,
     Session, FunctionalWOD, Booking, WorkoutInstance, TreatmentType, TreatmentBooking,
-    FinanceEntry, Lead
+    FinanceEntry, Lead, MobilityExercise
 )
 
 
@@ -75,5 +75,27 @@ class Command(BaseCommand):
 
         for i in range(50):
             Lead.objects.get_or_create(full_name=f"Lead {i+1}", defaults={"email": f"lead{i+1}@mail.com", "phone": f"+9715000{i:03d}", "source": "Meta Ads"})
+
+        mobility_library = [
+            ("Knee-to-Wall Dorsiflexion", "ankle", "beginner", "Ankle dorsiflexion mobility drill"),
+            ("Banded Ankle Mobilization", "ankle", "intermediate", "Band assisted ankle glide"),
+            ("90/90 Hip Flow", "hip", "beginner", "Controlled hip internal/external rotation"),
+            ("Couch Stretch", "hip", "beginner", "Hip flexor opening drill"),
+            ("Thoracic Open Book", "thoracic", "beginner", "Thoracic rotation opener"),
+            ("Foam Roller T-Spine Extension", "thoracic", "beginner", "Thoracic extension mobility"),
+            ("Wall Slides", "shoulder", "beginner", "Scapular upward rotation and control"),
+            ("Banded Shoulder Dislocates", "shoulder", "intermediate", "Shoulder flexion/extension prep"),
+            ("Dead Bug", "stability", "beginner", "Core stability anti-extension"),
+            ("Side Plank", "stability", "beginner", "Lateral trunk stability"),
+        ]
+        for name, category, level, description in mobility_library:
+            MobilityExercise.objects.get_or_create(
+                name=name,
+                defaults={
+                    "category": category,
+                    "level": level,
+                    "description": description,
+                },
+            )
 
         self.stdout.write(self.style.SUCCESS("Seed data created."))

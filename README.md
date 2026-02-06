@@ -35,6 +35,26 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api npm run dev -- --host 0.0.0.0
 - Prospect detail with editable fields, activities, tasks, conversion CTA.
 - Members list via `/api/members-overview/`.
 
+## Mobility Assessment + Auto Prescription
+- Create assessments at `/members/{id}` in **Mobility** section.
+- Rule engine applies WiseFitt protocol:
+  - Unilateral final score uses `min(left, right)`.
+  - Pain flag forces score 1.
+  - Priority and plan generation triggers by low scores.
+- Generate plan with button **Generate Mobility Plan**.
+- Training module (`/bookings`) pulls 1–2 exercises from latest active mobility plan into a **Mobility Block**.
+
+### Mobility endpoints
+- `GET/POST /api/mobility/assessments/`
+- `POST /api/mobility/assessments/{id}/generate_plan/`
+- `GET/POST /api/mobility/exercises/` (write admin-only)
+- `GET/POST /api/mobility/plans/`
+- `GET /api/mobility/members/{member_id}/latest/`
+- `GET /api/mobility/members/{member_id}/block/`
+
+### Seed mobility exercises
+- `python manage.py seed_data` now seeds mobility exercise library (ankle/hip/thoracic/shoulder/stability).
+
 ## Important API endpoints
 - `POST /api/leads/{id}/convert/`
 - `POST /api/leads/{id}/mark_lost/`
